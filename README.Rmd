@@ -1,0 +1,189 @@
+---
+title: "Assessment of Approaches to Computing Analysis of Covariance (ANCOVA)"
+author: Tommi Suvitaival, tommi.raimo.leo.suvitaival@regionh.dk, Steno Diabetes Center Copenhagen
+date: "`r base::Sys.Date()`"
+output: github_document
+---
+  
+# Prepare Data
+
+```{r Data-Prepare}
+
+load( file = "P:/Klinisk Forskning/Lukkede Mapper/SysMedCode/example_data/GA-lip-190627.RData")
+
+dependent.variable <- "SM(d31:1)"
+
+independent.variables <-
+  c(
+    "kleiner",
+    "age", 
+    "bmi", 
+    "gender",
+    "hba1c", 
+    "sbp",
+    "abstinent"
+  )
+
+tmp <-
+  apply(
+    X = 
+      !is.na( 
+        data[ , c( dependent.variable, independent.variables ) ]
+      ),
+    MAR = 1,
+    FUN = all
+  )
+
+data.model <- 
+  data.frame( 
+    data[ tmp, , drop = FALSE ],
+    stringsAsFactors = FALSE
+  )
+
+data.model[ , independent.variables[ 1 ] ] <-
+  factor( data.model[ , independent.variables[ 1 ] ] )
+
+independent.variables <- make.names( independent.variables )
+
+dependent.variable <- make.names( dependent.variable )
+
+```
+
+# Original-Independent-Variables Approach
+
+```{r Original-Approach}
+
+options( contrasts = c( 'contr.sum', 'contr.sum' ) )
+
+model.all <-
+  lm(
+    formula = 
+      paste(
+        dependent.variable,
+        " ~ ",
+        paste( 
+          independent.variables,
+          collapse = " + "
+        )
+      ),
+    data = data.model
+  )
+
+anova( object = model.all )
+
+car::Anova( mod = model.all, type = 2 )
+
+```
+
+# Deviation-from-the-Grand-Mean Approach
+
+```{r Deviation-Approach}
+
+options( contrasts = c( 'contr.sum', 'contr.sum' ) )
+
+data.deviation <-
+  data.model[ , c( dependent.variable, independent.variables ) ]
+
+data.deviation[ , independent.variables[ -1 ] ] <-
+  apply(
+    X = data.deviation[ , independent.variables[ -1 ] ],
+    MAR = 2,
+    FUN =
+      function( x ) {
+        x - mean( x )
+      }
+  )
+
+model.deviation <-
+  lm(
+    formula =
+      paste(
+        dependent.variable,
+        " ~ ",
+        paste( 
+          independent.variables,
+          collapse = " + "
+        )
+      ),
+    data = data.deviation
+  )
+
+anova( object = model.deviation )
+
+car::Anova( mod = model.deviation, type = 2 )
+
+```
+
+# Covariate-Residuals-Approach
+
+```{r Residuals-Approach}
+
+# 1) Compute model with covariates
+
+model.covariates <- 
+  lm(
+    formula = 
+      paste(
+        dependent.variable,
+        " ~ ",
+        paste( independent.variables[ -1 ], collapse = " + " )
+      ),
+    data = data.model
+  )
+
+# 2) Compute model with the factor and residuals
+
+data.model$"residuals" <- residuals( object = model.covariates )
+
+contrasts.original <- options( "contrasts" )$"contrasts"
+
+options( contrasts = c( 'contr.sum', 'contr.sum' ) )
+
+model.factor <-
+  lm(
+    formula = 
+      paste(
+        dependent.variable,
+        " ~ ",
+        independent.variables[ 1 ],
+        "+ residuals"
+      ),
+    data = data.model
+  )
+
+# 3) Compute F-test for the factor
+
+anova( object = model.factor )
+
+car::Anova( mod = model.factor, type = 2 )
+
+```
+
+## Discussion
+
+https://besjournals.onlinelibrary.wiley.com/doi/full/10.1046/j.1365-2656.2001.00524.x
+- not ANCOVA but "residual index" method (?)
+
+# Figure
+
+```{r}
+
+ggplot2::ggplot(
+  data = data.model,
+  mapping = 
+    ggplot2::aes_string(
+      x = independent.variables[ 1 ],
+      y = dependent.variable
+    )
+) +
+  ggplot2::geom_boxplot()
+
+```
+
+# SessionInfo
+
+```{r}
+
+utils::sessionInfo()
+
+```
